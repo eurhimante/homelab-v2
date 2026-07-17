@@ -13,3 +13,5 @@ node_modules/
 .venv/
 
 dist/
+
+services/hub3d/3DPlatform/print_engine/orcaslicer/bin/orca-slicer
