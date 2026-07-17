@@ -1,0 +1,144 @@
+name: homelab
+
+networks:
+  homelab:
+    driver: bridge
+
+services:
+
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+
+    environment:
+      TZ: ${TZ}
+
+    volumes:
+      - ./data/npm/data:/data
+      - ./data/npm/letsencrypt:/etc/letsencrypt
+
+    networks:
+      - homelab
+
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:81/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+
+    volumes:
+      - ./data/jellyfin/config:/config
+      - ./data/jellyfin/cache:/cache
+      - /mnt/rasplex:/media:ro
+
+    networks:
+      - homelab
+
+    ports:
+      - "8096:8096"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: filebrowser
+    restart: unless-stopped
+
+    environment:
+      FB_ROOT: /srv
+      FB_DATABASE: /database/filebrowser.db
+
+    volumes:
+      - ./data/filebrowser/database:/database
+      - ./data/filebrowser/config:/config
+      - /mnt/rasplex:/srv:ro
+
+    networks:
+      - homelab
+
+    ports:
+      - "8081:80"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+
+  hub3d-backend:
+    build:
+      context: ./services/hub3d/3DPlatform/print_engine
+
+    container_name: hub3d-backend
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      PRINTER_IP: ${PRINTER_IP:-192.168.1.193}
+      MOONRAKER_URL: ${MOONRAKER_URL:-http://192.168.1.193:7125}
+      PRINTER_INTERFACE_URL: ${PRINTER_INTERFACE_URL:-http://192.168.1.193/#/home}
+
+    volumes:
+      - ./services/hub3d/3DPlatform/print_engine/templates_3mf:/app/templates_3mf
+      - /mnt/rasplex:/mnt/rasplex
+
+    networks:
+      - homelab
+
+    expose:
+      - "8000"
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+
+  hub3d-frontend:
+    build:
+      context: ./services/hub3d/3DPlatform/print_engine_front
+
+    container_name: hub3d-frontend
+    restart: unless-stopped
+
+    depends_on:
+      hub3d-backend:
+        condition: service_started
+
+    networks:
+      - homelab
+
+    expose:
+      - "80"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10

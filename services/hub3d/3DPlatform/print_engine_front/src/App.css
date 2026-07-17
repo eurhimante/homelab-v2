@@ -1,0 +1,191 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #070b10; }
+
+.app {
+  height: 100vh;
+  background: radial-gradient(circle at top left, #1d2d44, #070b10 45%);
+  color: #f8fafc;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.sidebar {
+  padding: 20px;
+  background: rgba(8, 13, 22, 0.92);
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  overflow-y: auto;
+}
+
+.brand { display: flex; gap: 12px; align-items: center; margin-bottom: 22px; }
+.brand h1 { margin: 0; font-size: 22px; letter-spacing: 0.08em; }
+.brand p { margin: 3px 0 0; color: #94a3b8; font-size: 13px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 24px #22c55e; }
+
+.card {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.label { display: block; margin-bottom: 10px; color: #cbd5e1; font-weight: 700; }
+.file-name { margin-top: 10px; color: #93c5fd; font-size: 13px; word-break: break-all; }
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+label { color: #cbd5e1; font-size: 13px; }
+input, select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #0f172a;
+  color: white;
+}
+.check { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+.check input { width: auto; margin: 0; }
+
+.actions-col { display: grid; gap: 10px; margin: 16px 0; }
+button, .download {
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  color: white;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  font-weight: 800;
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.download { background: #1f2937; border: 1px solid rgba(148, 163, 184, 0.2); }
+
+.status {
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 16px;
+  padding: 14px;
+  color: #cbd5e1;
+}
+.status p { margin: 8px 0 0; color: #94a3b8; }
+
+.viewer-wrap { padding: 18px; display: flex; flex-direction: column; min-width: 0; }
+.viewer-header { height: 44px; display: flex; align-items: center; color: #cbd5e1; }
+.viewer {
+  flex: 1;
+  background: linear-gradient(180deg, #0f172a, #020617);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 22px;
+  overflow: hidden;
+  min-height: 0;
+}
+.placeholder { height: 100%; display: flex; align-items: center; justify-content: center; color: #64748b; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { max-height: 48vh; border-right: 0; border-bottom: 1px solid rgba(148, 163, 184, 0.18); }
+}
+
+.legend {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.printer-card {
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.printer-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.printer-pill.offline {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.printer-message,
+.printer-file {
+  margin: 10px 0 0;
+  color: #94a3b8;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.printer-file {
+  color: #93c5fd;
+}
+
+.printer-actions button:last-child {
+  background: #1f2937;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.progress-wrap {
+  margin-top: 12px;
+}
+
+.progress-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #cbd5e1;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  overflow: hidden;
+}
+
+.progress-bar > div {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #22c55e, #06b6d4);
+  transition: width 0.35s ease;
+}
+
+.printer-metrics {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.printer-metrics div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.printer-metrics span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.printer-metrics strong {
+  color: #e2e8f0;
+  font-size: 12px;
+  text-align: right;
+  word-break: break-word;
+}

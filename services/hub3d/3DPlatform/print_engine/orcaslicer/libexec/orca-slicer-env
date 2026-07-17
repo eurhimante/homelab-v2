@@ -1,0 +1,112 @@
+#!/bin/sh
+set -e
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+APPDIR="${APPDIR:-$(CDPATH= cd -- "$SELF_DIR/.." && pwd)}"
+USE_BUNDLED_WEBKITGTK_STACK=0
+if [ -e "$APPDIR/lib/libwebkit2gtk-4.1.so.0" ] || [ -e "$APPDIR/lib/libwebkit2gtk-4.0.so.0" ]; then
+    USE_BUNDLED_WEBKITGTK_STACK=1
+fi
+
+export APPDIR
+PRIVATE_LIB_DIR="$APPDIR/lib/orca-runtime"
+if [ -d "$PRIVATE_LIB_DIR" ]; then
+    export LD_LIBRARY_PATH="$PRIVATE_LIB_DIR:$APPDIR/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+else
+    export LD_LIBRARY_PATH="$APPDIR/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+has_host_runtime_library() {
+    local lib_name path
+
+    if command -v ldconfig >/dev/null 2>&1; then
+        if ldconfig -p 2>/dev/null | grep -Fq " $lib_name"; then
+            return 0
+        fi
+    fi
+
+    for path in         /lib /lib64 /usr/lib /usr/lib64         /usr/lib/* /usr/lib64/* /lib/* /lib64/*; do
+        if [ -e "$path/$lib_name" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+target_missing_runtime_library() {
+    local target_bin="$1"
+    local lib_name="$2"
+
+    if [ -z "$target_bin" ] || [ ! -e "$target_bin" ]; then
+        return 1
+    fi
+
+    if command -v ldd >/dev/null 2>&1; then
+        if ldd "$target_bin" 2>/dev/null | grep -Fq "$lib_name => not found"; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+TARGET_BIN="$1"
+
+if target_missing_runtime_library "$TARGET_BIN" "libOpenGL.so.0" || ! has_host_runtime_library "libOpenGL.so.0"; then
+    echo "Error: missing host OpenGL runtime library libOpenGL.so.0." >&2
+    echo "On Ubuntu/Pop!_OS/Debian, install: libopengl0 and libglu1-mesa" >&2
+    echo "On Arch/CachyOS, install: libglvnd" >&2
+    exit 1
+fi
+
+if [ "$USE_BUNDLED_WEBKITGTK_STACK" = "1" ]; then
+    export LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export GST_PLUGIN_SYSTEM_PATH=""
+    export GST_PLUGIN_PATH="$APPDIR/lib/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
+    export GIO_EXTRA_MODULES="$APPDIR/lib/gio/modules${GIO_EXTRA_MODULES:+:$GIO_EXTRA_MODULES}"
+    export XDG_DATA_DIRS="$APPDIR/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+
+    if [ -d "$APPDIR/share/glib-2.0/schemas" ]; then
+        export GSETTINGS_SCHEMA_DIR="$APPDIR/share/glib-2.0/schemas"
+    fi
+
+    if [ -x "$APPDIR/libexec/gstreamer-1.0/gst-plugin-scanner" ]; then
+        export GST_PLUGIN_SCANNER="$APPDIR/libexec/gstreamer-1.0/gst-plugin-scanner"
+    fi
+
+    if [ -d "$APPDIR/lib/gdk-pixbuf-2.0/2.10.0/loaders" ]; then
+        export GDK_PIXBUF_MODULEDIR="$APPDIR/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+        if [ -x "$APPDIR/libexec/gdk-pixbuf-query-loaders" ]; then
+            PIXBUF_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/OrcaSlicer"
+            PIXBUF_CACHE_FILE="$PIXBUF_CACHE_DIR/gdk-pixbuf-loaders.cache"
+            mkdir -p "$PIXBUF_CACHE_DIR"
+            if [ ! -s "$PIXBUF_CACHE_FILE" ] || find "$APPDIR/lib/gdk-pixbuf-2.0/2.10.0/loaders" -type f -newer "$PIXBUF_CACHE_FILE" | grep -q .; then
+                "$APPDIR/libexec/gdk-pixbuf-query-loaders" "$APPDIR/lib/gdk-pixbuf-2.0/2.10.0/loaders"/*.so > "$PIXBUF_CACHE_FILE" 2>/dev/null || true
+            fi
+            if [ -s "$PIXBUF_CACHE_FILE" ]; then
+                export GDK_PIXBUF_MODULE_FILE="$PIXBUF_CACHE_FILE"
+            fi
+        fi
+    fi
+
+    if [ -d "$APPDIR/lib/webkit2gtk-4.1" ]; then
+        export WEBKIT_EXEC_PATH="$APPDIR/lib/webkit2gtk-4.1"
+    elif [ -d "$APPDIR/lib/webkit2gtk-4.0" ]; then
+        export WEBKIT_EXEC_PATH="$APPDIR/lib/webkit2gtk-4.0"
+    fi
+
+    if [ -d "$APPDIR/lib/webkit2gtk-4.1/injected-bundle" ]; then
+        export WEBKIT_INJECTED_BUNDLE_PATH="$APPDIR/lib/webkit2gtk-4.1/injected-bundle"
+    elif [ -d "$APPDIR/lib/webkit2gtk-4.0/injected-bundle" ]; then
+        export WEBKIT_INJECTED_BUNDLE_PATH="$APPDIR/lib/webkit2gtk-4.0/injected-bundle"
+    fi
+else
+    if target_missing_runtime_library "$TARGET_BIN" "libwebkit2gtk-4.1.so.0" ||        target_missing_runtime_library "$TARGET_BIN" "libjavascriptcoregtk-4.1.so.0" ||        ! has_host_runtime_library "libwebkit2gtk-4.1.so.0" ||        ! has_host_runtime_library "libjavascriptcoregtk-4.1.so.0"; then
+        echo "Error: missing host WebKitGTK 4.1 runtime libraries." >&2
+        echo "Install the distro package providing libwebkit2gtk-4.1.so.0 and libjavascriptcoregtk-4.1.so.0." >&2
+        echo "On Arch/CachyOS, install: webkit2gtk-4.1" >&2
+        exit 1
+    fi
+fi
+
+exec "$@"
