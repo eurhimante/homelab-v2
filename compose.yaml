@@ -32,6 +32,33 @@ services:
       timeout: 10s
       retries: 10
 
+  jellyfin-invites:
+    build:
+      context: ./services/jellyfin-invites
+    container_name: jellyfin-invites
+    restart: unless-stopped
+
+    environment:
+      APP_DATA_DIR: /app/data
+      INVITE_ADMIN_USERNAME: ${INVITE_ADMIN_USERNAME}
+      INVITE_ADMIN_PASSWORD: ${INVITE_ADMIN_PASSWORD}
+      INVITE_ENCRYPTION_KEY: ${INVITE_ENCRYPTION_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}
+      JELLYFIN_URL: http://jellyfin:8096
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY}
+
+    volumes:
+      - ./data/jellyfin-invites:/app/data
+
+    networks:
+      - homelab
+
+    expose:
+      - "3000"
+
+    depends_on:
+      jellyfin:
+        condition: service_healthy
 
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
@@ -42,6 +69,9 @@ services:
       TZ: ${TZ}
       PUID: ${PUID}
       PGID: ${PGID}
+
+    devices:
+      - /dev/dxg:/dev/dxg
 
     volumes:
       - ./data/jellyfin/config:/config
