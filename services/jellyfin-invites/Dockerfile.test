@@ -1,0 +1,11 @@
+FROM homelab-jellyfin-invites:latest
+
+# Installation des dépendances de test
+COPY requirements-test.txt .
+RUN pip install --no-cache-dir -r requirements-test.txt
+
+# Copie des tests
+COPY tests /app/tests
+
+# Commande par défaut pour lancer les tests
+CMD ["pytest", "/app/tests"]
