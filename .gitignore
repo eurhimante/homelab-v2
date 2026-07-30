@@ -15,3 +15,4 @@ node_modules/
 dist/
 
 services/hub3d/3DPlatform/print_engine/orcaslicer/bin/orca-slicer
+services/hub3d/3DPlatform/print_engine/orcaslicer/bin/
