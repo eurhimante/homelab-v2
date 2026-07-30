@@ -1,9 +1,10 @@
 import argparse
+import json
+import math
 import re
 import shutil
 import tempfile
 import zipfile
-import math
 import uuid
 from pathlib import Path
 
@@ -103,6 +104,55 @@ def patch_project_settings(
     text = patch_json_value(text, "wall_loops", str(wall_loops))
 
     project_config.write_text(text, encoding="utf-8")
+
+
+# =========================================================
+# PLATEAU IMPRIMABLE (NOUVEAU)
+# =========================================================
+
+# Valeur de repli SEULEMENT si le fichier project_settings.config est
+# introuvable ou illisible. Ne doit normalement jamais être utilisée :
+# on préfère échouer bruyamment plutôt que de deviner un plateau 235mm
+# qui n'existe peut-être pas sur l'imprimante cible.
+FALLBACK_BED_SIZE = 200.0
+
+
+def get_printable_area(root_dir):
+    """Lit le plateau imprimable RÉEL depuis project_settings.config,
+    au lieu de supposer une taille fixe (c'était la cause du bug -52 :
+    des projets étaient dupliqués sur une grille pensée pour un plateau
+    de 235mm alors que le plateau réel de l'imprimante faisait 200mm).
+
+    Retourne (largeur, profondeur) en mm.
+    """
+    cfg_path = root_dir / "Metadata" / "project_settings.config"
+
+    if not cfg_path.exists():
+        return FALLBACK_BED_SIZE, FALLBACK_BED_SIZE
+
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8", errors="ignore"))
+        points = cfg.get("printable_area", [])
+
+        xs, ys = [], []
+        for p in points:
+            x_str, y_str = p.split("x")
+            xs.append(float(x_str))
+            ys.append(float(y_str))
+
+        if not xs or not ys:
+            return FALLBACK_BED_SIZE, FALLBACK_BED_SIZE
+
+        width = max(xs) - min(xs)
+        depth = max(ys) - min(ys)
+
+        if width <= 0 or depth <= 0:
+            return FALLBACK_BED_SIZE, FALLBACK_BED_SIZE
+
+        return width, depth
+
+    except Exception:
+        return FALLBACK_BED_SIZE, FALLBACK_BED_SIZE
 
 
 # =========================================================
@@ -215,10 +265,12 @@ def apply_uniform_scale_and_drop_to_bed(root_dir, scale):
     old_transform = item_match.group(2)
     vals = scale_transform_values(old_transform, scale)
 
+    # Extrait les vertices depuis le fichier objet réel
     vertices = []
-
     if object_model_file and object_model_file.exists():
         vertices = get_vertices_from_object_model(object_model_file)
+    # SINON: si le fichier objet est introuvable, impossible de faire un
+    # drop-to-bed correct basé sur le mesh.
 
     if vertices:
         min_z = min(
@@ -241,6 +293,7 @@ def apply_uniform_scale_and_drop_to_bed(root_dir, scale):
     if model_settings_file.exists():
         cfg = model_settings_file.read_text(encoding="utf-8", errors="ignore")
 
+        # Toujours en dur sur object_id="2" pour matcher la logique actuelle.
         assemble_block = (
             '  <assemble>\n'
             f'   <assemble_item object_id="2" instance_id="0" '
@@ -256,15 +309,14 @@ def apply_uniform_scale_and_drop_to_bed(root_dir, scale):
                 flags=re.S
             )
         else:
-            cfg = re.sub(
-                r'</config>',
-                assemble_block + "\n</config>",
-                cfg
-            )
+            if "<assemble>" not in cfg:
+                cfg = re.sub(
+                    r'</config>',
+                    assemble_block + "\n</config>",
+                    cfg
+                )
 
         model_settings_file.write_text(cfg, encoding="utf-8")
-
-
 
 
 def apply_transform_xy(vals, x, y, z):
@@ -303,9 +355,17 @@ def get_transformed_size_xy(root_dir):
     return max(width, 10.0), max(depth, 10.0)
 
 
-def duplicate_instances(root_dir, quantity=1, bed_size=235, margin=10, gap=8):
+def duplicate_instances(root_dir, quantity=1, margin=10, gap=8, strict=True):
     """Duplique l'objet principal dans le 3MF en copiant les <item> du build.
-    Le même objectid est réutilisé avec des transforms X/Y décalés en grille.
+
+    CORRECTIF: la grille est désormais dimensionnée et centrée par rapport
+    au VRAI plateau imprimable (lu dans project_settings.config), et non
+    plus par rapport à une taille de plateau supposée à 235mm étendue
+    depuis la position d'origine de l'objet. C'était la cause du bug
+    "Some objects are located over the boundary of the heated bed" /
+    return -52 : sur les imprimantes dont le plateau réel est plus petit
+    (ex: 200x200), la grille dépassait le bord sans jamais être détecté
+    avant l'appel à OrcaSlicer CLI.
     """
     try:
         quantity = max(1, int(quantity))
@@ -332,22 +392,48 @@ def duplicate_instances(root_dir, quantity=1, bed_size=235, margin=10, gap=8):
         return
 
     width, depth = get_transformed_size_xy(root_dir)
+    bed_w, bed_h = get_printable_area(root_dir)
+
     step_x = width + gap
     step_y = depth + gap
-    cols = max(1, min(quantity, int((bed_size - 2 * margin) // max(step_x, 1))))
-    if cols < 1:
-        cols = 1
 
-    base_x = base_vals[9]
-    base_y = base_vals[10]
+    usable_w = max(bed_w - 2 * margin, step_x)
+    usable_h = max(bed_h - 2 * margin, step_y)
+
+    cols = max(1, min(quantity, int(usable_w // step_x)))
+    rows = math.ceil(quantity / cols)
+
+    # Garde-fou : si même une seule colonne/ligne ne tient pas sur le
+    # plateau réel, on échoue proprement ICI plutôt que de laisser
+    # OrcaSlicer CLI renvoyer un -52 opaque après coup.
+    if rows * step_y - gap > usable_h or step_x > usable_w:
+        if strict:
+            raise ValueError(
+                f"quantity={quantity} ne tient pas sur le plateau réel "
+                f"({bed_w:.0f}x{bed_h:.0f}mm) avec cet objet "
+                f"({width:.1f}x{depth:.1f}mm, pas de grille {step_x:.1f}x{step_y:.1f}mm). "
+                f"Réduire la quantité, réduire le scale, ou augmenter le plateau."
+            )
+        # Mode non strict : on tronque silencieusement à ce qui tient.
+        rows = max(1, int(usable_h // step_y))
+        quantity = min(quantity, cols * rows)
+
+    # Grille centrée sur le plateau réel (au lieu d'être étendue depuis
+    # base_x/base_y, qui est déjà proche du centre et fait sortir la
+    # grille du plateau bien avant que "cols" ne soit épuisé).
+    grid_w = (cols - 1) * step_x
+    grid_h = (rows - 1) * step_y
+
+    start_x = bed_w / 2.0 - grid_w / 2.0
+    start_y = bed_h / 2.0 - grid_h / 2.0
 
     new_items = []
     for idx in range(quantity):
         row = idx // cols
         col = idx % cols
         vals = base_vals[:]
-        vals[9] = base_x + col * step_x
-        vals[10] = base_y + row * step_y
+        vals[9] = start_x + col * step_x
+        vals[10] = start_y + row * step_y
         transform = format_transform(vals)
 
         item = item_match.group(0)
@@ -360,7 +446,12 @@ def duplicate_instances(root_dir, quantity=1, bed_size=235, margin=10, gap=8):
 
     if model_settings_file.exists():
         cfg = model_settings_file.read_text(encoding="utf-8", errors="ignore")
-        mi_match = re.search(r'(\s*<model_instance>\s*<metadata key="object_id" value="2"/>\s*<metadata key="instance_id" value=")0("/>\s*<metadata key="identify_id" value=")([^"/]+)("/>\s*</model_instance>)', cfg, flags=re.S)
+        mi_match = re.search(
+            r'(\s*<model_instance>\s*<metadata key="object_id" value="2"/>\s*'
+            r'<metadata key="instance_id" value=")0("/>\s*'
+            r'<metadata key="identify_id" value=")([^"/]+)("/>\s*</model_instance>)',
+            cfg, flags=re.S
+        )
         if mi_match:
             blocks = []
             for idx in range(quantity):
@@ -368,7 +459,6 @@ def duplicate_instances(root_dir, quantity=1, bed_size=235, margin=10, gap=8):
                 blocks.append(f'{mi_match.group(1)}{idx}{mi_match.group(2)}{identify}{mi_match.group(4)}')
             cfg = cfg[:mi_match.start()] + "\n".join(blocks) + cfg[mi_match.end():]
 
-        # Si un bloc assemble a été créé par le scale, on le laisse minimal pour éviter les incohérences.
         model_settings_file.write_text(cfg, encoding="utf-8")
 
 
@@ -389,7 +479,8 @@ def merge_3mf(
     brim=5,
     layer=0.2,
     wall_loops=2,
-    quantity=1
+    quantity=1,
+    strict_bed_check=True
 ):
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -426,13 +517,10 @@ def merge_3mf(
         if cli_objects.exists():
             copy_tree(cli_objects, out_objects)
 
-        # Scale + drop to bed
-        if scale != 1.0:
-            apply_uniform_scale_and_drop_to_bed(out_dir, scale)
-
-        duplicate_instances(out_dir, quantity=quantity)
-
-        # Paramètres impression
+        # Paramètres impression : appliqués AVANT la duplication, pour que
+        # get_printable_area() lise déjà le bon project_settings.config
+        # (le plateau ne dépend pas de ces réglages, mais on garde l'ordre
+        # explicite pour éviter toute surprise si ça change un jour).
         patch_project_settings(
             out_dir / "Metadata" / "project_settings.config",
             support_type=support_type,
@@ -444,6 +532,12 @@ def merge_3mf(
             layer=layer,
             wall_loops=wall_loops
         )
+
+        # Scale + drop to bed
+        if scale != 1.0:
+            apply_uniform_scale_and_drop_to_bed(out_dir, scale)
+
+        duplicate_instances(out_dir, quantity=quantity, strict=strict_bed_check)
 
         repack_3mf(out_dir, output_3mf)
 
@@ -490,6 +584,13 @@ def main():
     parser.add_argument("--layer", type=float, default=0.2, help="Hauteur de couche")
     parser.add_argument("--wall-loops", type=int, default=2, help="Nombre de parois")
 
+    parser.add_argument(
+        "--allow-overflow",
+        action="store_true",
+        help="Ne pas échouer si la quantité ne tient pas sur le plateau réel "
+             "(tronque silencieusement au lieu de lever une erreur)"
+    )
+
     args = parser.parse_args()
 
     merge_3mf(
@@ -505,7 +606,8 @@ def main():
         brim=args.brim,
         layer=args.layer,
         wall_loops=args.wall_loops,
-        quantity=args.quantity
+        quantity=args.quantity,
+        strict_bed_check=not args.allow_overflow
     )
 
 
