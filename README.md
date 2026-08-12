@@ -38,8 +38,20 @@ Le dossier `scripts/` contient tous les outils nécessaires à la maintenance :
 
 ## 📦 Services
 
-- **Nginx Proxy Manager** : Gestionnaire de reverse proxy et certificats SSL.
-- **Jellyfin** : Serveur média.
-- **Jellyfin-Invites** : Service de gestion d'invitations Jellyfin.
-- **Filebrowser** : Explorateur de fichiers distant.
-- **Hub3D** : Backend et frontend pour l'impression 3D.
+| Service | Description |
+| :--- | :--- |
+| **Nginx Proxy Manager** | Reverse proxy et gestion des certificats SSL. |
+| **Homepage** | Dashboard central du Homelab. |
+| **Jellyfin-Invites** | Gestion des invitations et utilisateurs Jellyfin. |
+| **Filebrowser** | Explorateur de fichiers avec accès au stockage NAS. |
+| **Mealie** | Gestionnaire de recettes auto-hébergé. |
+| **Hub3D Backend** | Backend et moteur de traitement pour l'impression 3D. |
+| **Hub3D Frontend** | Interface web de la plateforme Hub3D. |
+
+### Jellyfin
+
+Jellyfin est actuellement hébergé séparément du stack Docker Compose principal, sous Windows/WSL.
+
+Le service `jellyfin-invites` communique avec Jellyfin via `127.0.0.1:8096`.
+
+Les anciennes configurations Docker Compose incluant Jellyfin restent accessibles via l'historique Git du dépôt.

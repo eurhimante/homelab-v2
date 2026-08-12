@@ -11,10 +11,7 @@ services:
     container_name: nginx-proxy-manager
     restart: unless-stopped
 
-    ports:
-      - "80:80"
-      - "81:81"
-      - "443:443"
+    network_mode: host
 
     environment:
       TZ: ${TZ}
@@ -22,9 +19,6 @@ services:
     volumes:
       - ./data/npm/data:/data
       - ./data/npm/letsencrypt:/etc/letsencrypt
-
-    networks:
-      - homelab
 
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://127.0.0.1:81/health"]
@@ -38,58 +32,19 @@ services:
     container_name: jellyfin-invites
     restart: unless-stopped
 
+    network_mode: host
+
     environment:
       APP_DATA_DIR: /app/data
       INVITE_ADMIN_USERNAME: ${INVITE_ADMIN_USERNAME}
       INVITE_ADMIN_PASSWORD: ${INVITE_ADMIN_PASSWORD}
       INVITE_ENCRYPTION_KEY: ${INVITE_ENCRYPTION_KEY}
       SESSION_SECRET: ${SESSION_SECRET}
-      JELLYFIN_URL: http://jellyfin:8096
+      JELLYFIN_URL: http://127.0.0.1:8096
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY}
 
     volumes:
       - ./data/jellyfin-invites:/app/data
-
-    networks:
-      - homelab
-
-    expose:
-      - "3000"
-
-    depends_on:
-      jellyfin:
-        condition: service_healthy
-
-  jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
-    container_name: jellyfin
-    restart: unless-stopped
-
-    environment:
-      TZ: ${TZ}
-      PUID: ${PUID}
-      PGID: ${PGID}
-
-    devices:
-      - /dev/dxg:/dev/dxg
-
-    volumes:
-      - ./data/jellyfin/config:/config
-      - ./data/jellyfin/cache:/cache
-      - /mnt/rasplex:/media:ro
-
-    networks:
-      - homelab
-
-    ports:
-      - "8096:8096"
-
-    healthcheck:
-      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8096/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-
 
   filebrowser:
     image: filebrowser/filebrowser:latest
@@ -103,7 +58,7 @@ services:
     volumes:
       - ./data/filebrowser/database:/database
       - ./data/filebrowser/config:/config
-      - /mnt/rasplex:/srv:ro
+      - /mnt/rasplex:/srv:rw
 
     networks:
       - homelab
@@ -117,6 +72,66 @@ services:
       timeout: 10s
       retries: 10
 
+  mealie:
+    image: ghcr.io/mealie-recipes/mealie:v3.22.0
+    container_name: mealie
+    restart: unless-stopped
+
+    environment:
+      ALLOW_SIGNUP: "false"
+      PUID: 1000
+      PGID: 1000
+      TZ: Europe/Paris
+      BASE_URL: https://mealie.solainecreation.fr
+
+    volumes:
+      - ./data/mealie:/app/data
+
+    networks:
+      - homelab
+
+    ports:
+      - "127.0.0.1:9925:9000"
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    restart: unless-stopped
+
+    group_add:
+      - "1001"
+
+    environment:
+      PUID: 1000
+      PGID: 1000
+      HOMEPAGE_ALLOWED_HOSTS: ${HOMEPAGE_ALLOWED_HOSTS}
+
+    volumes:
+      - ./data/homepage:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    ports:
+      - "127.0.0.1:3080:3000"
+
+    networks:
+      - homelab
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
 
   hub3d-backend:
     build:
@@ -164,8 +179,8 @@ services:
     networks:
       - homelab
 
-    expose:
-      - "80"
+    ports:
+      - "127.0.0.1:8082:80"
 
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1"]
